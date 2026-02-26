@@ -136,26 +136,38 @@ func authMiddlewareLegacy(next http.HandlerFunc) http.HandlerFunc {
 }
 
 func jsonResponse(w http.ResponseWriter, status int, success bool, message string, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(Response{
+	response := Response{
 		Success: success,
 		Message: message,
 		Data:    data,
-	})
+	}
+	jsonBytes, err := json.Marshal(response)
+	if err != nil {
+		fmt.Fprintf(w, `{"success":false,"message":"JSON encoding error"}`)
+		return
+	}
+	w.Write(jsonBytes)
 }
 
 func legacyResponse(w http.ResponseWriter, status int, code int, message string, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(LegacyResponse{
+	response := LegacyResponse{
 		Meta: LegacyMeta{
 			Code:    code,
 			Message: message,
 		},
 		Data:    data,
 		Message: message,
-	})
+	}
+	jsonBytes, err := json.Marshal(response)
+	if err != nil {
+		fmt.Fprintf(w, `{"meta":{"code":500,"message":"JSON encoding error"},"data":null}`)
+		return
+	}
+	w.Write(jsonBytes)
 }
 
 func createSSHAccount(w http.ResponseWriter, r *http.Request) {
@@ -636,9 +648,9 @@ func createShadowsocksAccount(w http.ResponseWriter, r *http.Request) {
 		quotaDisplay = quota + " GB"
 	}
 
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	response := map[string]interface{}{
 		"status": "success",
 		"data": map[string]interface{}{
 			"username":     username,
@@ -651,7 +663,13 @@ func createShadowsocksAccount(w http.ResponseWriter, r *http.Request) {
 			"ss_link_ws":   "ss://link-ws",
 			"ss_link_grpc": "ss://link-grpc",
 		},
-	})
+	}
+	jsonBytes, err := json.Marshal(response)
+	if err != nil {
+		fmt.Fprintf(w, `{"status":"error","message":"JSON encoding error"}`)
+		return
+	}
+	w.Write(jsonBytes)
 }
 
 func createUser(w http.ResponseWriter, r *http.Request) {
