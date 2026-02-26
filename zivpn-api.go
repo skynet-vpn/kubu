@@ -67,6 +67,27 @@ type LegacyResponse struct {
 	Message string      `json:"message,omitempty"`
 }
 
+type SSHPort struct {
+	TLS       string `json:"tls"`
+	None      string `json:"none"`
+	OvpnTCP   string `json:"ovpntcp"`
+	OvpnUDP   string `json:"ovpnudp"`
+	SSHOHP    string `json:"sshohp"`
+	UDPCustom string `json:"udpcustom"`
+}
+
+type SSHAccountData struct {
+	Hostname string  `json:"hostname"`
+	ISP      string  `json:"ISP"`
+	CITY     string  `json:"CITY"`
+	Username string  `json:"username"`
+	Password string  `json:"password"`
+	PubKey   string  `json:"pubkey"`
+	Exp      string  `json:"exp"`
+	Time     string  `json:"time"`
+	Port     SSHPort `json:"port"`
+}
+
 var mutex = &sync.Mutex{}
 
 func main() {
@@ -208,27 +229,30 @@ func createSSHAccount(w http.ResponseWriter, r *http.Request) {
 			hostname = ip
 		}
 	}
+	if hostname == "" {
+		hostname = "localhost"
+	}
 
-	data := map[string]interface{}{
-		"hostname": hostname,
-		"ISP":      "Unknown",
-		"CITY":     "Unknown",
-		"username": username,
-		"password": password,
-		"pubkey":   "-",
-		"exp":      expDate,
-		"time":     expTime,
-		"port": map[string]string{
-			"tls":       "443",
-			"none":      "80",
-			"ovpntcp":   "1194",
-			"ovpnudp":   "2200",
-			"sshohp":    "3128",
-			"udpcustom": "1-65535",
+	accountData := SSHAccountData{
+		Hostname: hostname,
+		ISP:      "Unknown",
+		CITY:     "Unknown",
+		Username: username,
+		Password: password,
+		PubKey:   "-",
+		Exp:      expDate,
+		Time:     expTime,
+		Port: SSHPort{
+			TLS:       "443",
+			None:      "80",
+			OvpnTCP:   "1194",
+			OvpnUDP:   "2200",
+			SSHOHP:    "3128",
+			UDPCustom: "1-65535",
 		},
 	}
 
-	legacyResponse(w, http.StatusOK, 200, "OK", data)
+	legacyResponse(w, http.StatusOK, 200, "OK", accountData)
 }
 
 func createVMessAccount(w http.ResponseWriter, r *http.Request) {
