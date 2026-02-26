@@ -79,7 +79,11 @@ func main() {
 	http.HandleFunc("/api/user/renew", authMiddleware(renewUser))
 	http.HandleFunc("/api/users", authMiddleware(listUsers))
 	http.HandleFunc("/api/info", authMiddleware(getSystemInfo))
-	http.HandleFunc("/vps/sshvpn", authMiddlewareLegacy(createLegacyUser))
+	http.HandleFunc("/vps/sshvpn", authMiddlewareLegacy(createSSHAccount))
+	http.HandleFunc("/vps/vmessall", authMiddlewareLegacy(createVMessAccount))
+	http.HandleFunc("/vps/vlessall", authMiddlewareLegacy(createVLESSAccount))
+	http.HandleFunc("/vps/trojanall", authMiddlewareLegacy(createTrojanAccount))
+	http.HandleFunc("/createshadowsocks", authMiddlewareLegacy(createShadowsocksAccount))
 
 	fmt.Printf("ZiVPN API berjalan di port %s\n", Port)
 	log.Fatal(http.ListenAndServe(Port, nil))
@@ -133,7 +137,7 @@ func legacyResponse(w http.ResponseWriter, status int, code int, message string,
 	})
 }
 
-func createLegacyUser(w http.ResponseWriter, r *http.Request) {
+func createSSHAccount(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		legacyResponse(w, http.StatusMethodNotAllowed, 405, "Method not allowed", nil)
 		return
@@ -225,6 +229,405 @@ func createLegacyUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	legacyResponse(w, http.StatusOK, 200, "OK", data)
+}
+
+func createVMessAccount(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		legacyResponse(w, http.StatusMethodNotAllowed, 405, "Method not allowed", nil)
+		return
+	}
+
+	var req LegacyCreateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		legacyResponse(w, http.StatusBadRequest, 400, "Invalid request body", nil)
+		return
+	}
+
+	username := strings.TrimSpace(req.Username)
+	if username == "" || req.Expired <= 0 {
+		legacyResponse(w, http.StatusBadRequest, 400, "username dan expired harus valid", nil)
+		return
+	}
+
+	mutex.Lock()
+	defer mutex.Unlock()
+
+	config, err := loadConfig()
+	if err != nil {
+		legacyResponse(w, http.StatusInternalServerError, 500, "Gagal membaca config", nil)
+		return
+	}
+
+	for _, p := range config.Auth.Config {
+		if p == username {
+			legacyResponse(w, http.StatusConflict, 409, "User sudah ada", nil)
+			return
+		}
+	}
+
+	config.Auth.Config = append(config.Auth.Config, username)
+	if err := saveConfig(config); err != nil {
+		legacyResponse(w, http.StatusInternalServerError, 500, "Gagal menyimpan config", nil)
+		return
+	}
+
+	expiry := time.Now().Add(time.Duration(req.Expired) * 24 * time.Hour)
+	expDate := expiry.Format("2006-01-02")
+	entry := fmt.Sprintf("%s | %s\n", username, expDate)
+
+	f, err := os.OpenFile(UserDB, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		legacyResponse(w, http.StatusInternalServerError, 500, "Gagal membuka database user", nil)
+		return
+	}
+	defer f.Close()
+	if _, err := f.WriteString(entry); err != nil {
+		legacyResponse(w, http.StatusInternalServerError, 500, "Gagal menulis database user", nil)
+		return
+	}
+
+	if err := restartService(); err != nil {
+		legacyResponse(w, http.StatusInternalServerError, 500, "Gagal merestart service", nil)
+		return
+	}
+
+	hostname := getDomainValue()
+	if hostname == "Tidak diatur" {
+		if ip := getPublicIP(); ip != "" {
+			hostname = ip
+		}
+	}
+
+	generateUUID := "550e8400-e29b-41d4-a716-446655440000"
+
+	data := map[string]interface{}{
+		"hostname": hostname,
+		"ISP":      "Unknown",
+		"CITY":     "Unknown",
+		"username": username,
+		"uuid":     generateUUID,
+		"expired":  expDate,
+		"time":     expiry.Format("15:04:05"),
+		"port": map[string]string{
+			"tls":  "443",
+			"none": "80",
+			"any":  "1-65535",
+		},
+		"path": map[string]string{
+			"stn":   "/vmess",
+			"multi": "/vmess-multi",
+			"grpc":  "vmess-grpc",
+			"up":    "/upgrade",
+		},
+		"link": map[string]string{
+			"tls":    "vmess://link-tls",
+			"none":   "vmess://link-none",
+			"grpc":   "vmess://link-grpc",
+			"uptls":  "vmess://link-uptls",
+			"upntls": "vmess://link-upntls",
+		},
+	}
+
+	legacyResponse(w, http.StatusOK, 200, "OK", data)
+}
+
+func createVLESSAccount(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		legacyResponse(w, http.StatusMethodNotAllowed, 405, "Method not allowed", nil)
+		return
+	}
+
+	var req LegacyCreateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		legacyResponse(w, http.StatusBadRequest, 400, "Invalid request body", nil)
+		return
+	}
+
+	username := strings.TrimSpace(req.Username)
+	if username == "" || req.Expired <= 0 {
+		legacyResponse(w, http.StatusBadRequest, 400, "username dan expired harus valid", nil)
+		return
+	}
+
+	mutex.Lock()
+	defer mutex.Unlock()
+
+	config, err := loadConfig()
+	if err != nil {
+		legacyResponse(w, http.StatusInternalServerError, 500, "Gagal membaca config", nil)
+		return
+	}
+
+	for _, p := range config.Auth.Config {
+		if p == username {
+			legacyResponse(w, http.StatusConflict, 409, "User sudah ada", nil)
+			return
+		}
+	}
+
+	config.Auth.Config = append(config.Auth.Config, username)
+	if err := saveConfig(config); err != nil {
+		legacyResponse(w, http.StatusInternalServerError, 500, "Gagal menyimpan config", nil)
+		return
+	}
+
+	expiry := time.Now().Add(time.Duration(req.Expired) * 24 * time.Hour)
+	expDate := expiry.Format("2006-01-02")
+	entry := fmt.Sprintf("%s | %s\n", username, expDate)
+
+	f, err := os.OpenFile(UserDB, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		legacyResponse(w, http.StatusInternalServerError, 500, "Gagal membuka database user", nil)
+		return
+	}
+	defer f.Close()
+	if _, err := f.WriteString(entry); err != nil {
+		legacyResponse(w, http.StatusInternalServerError, 500, "Gagal menulis database user", nil)
+		return
+	}
+
+	if err := restartService(); err != nil {
+		legacyResponse(w, http.StatusInternalServerError, 500, "Gagal merestart service", nil)
+		return
+	}
+
+	hostname := getDomainValue()
+	if hostname == "Tidak diatur" {
+		if ip := getPublicIP(); ip != "" {
+			hostname = ip
+		}
+	}
+
+	generateUUID := "550e8400-e29b-41d4-a716-446655440001"
+
+	data := map[string]interface{}{
+		"hostname": hostname,
+		"ISP":      "Unknown",
+		"CITY":     "Unknown",
+		"username": username,
+		"uuid":     generateUUID,
+		"expired":  expDate,
+		"time":     expiry.Format("15:04:05"),
+		"port": map[string]string{
+			"tls":  "443",
+			"none": "80",
+			"any":  "1-65535",
+		},
+		"path": map[string]string{
+			"stn":   "/vless",
+			"multi": "/vless-multi",
+			"grpc":  "vless-grpc",
+			"up":    "/upgrade",
+		},
+		"link": map[string]string{
+			"tls":    "vless://link-tls",
+			"none":   "vless://link-none",
+			"grpc":   "vless://link-grpc",
+			"uptls":  "vless://link-uptls",
+			"upntls": "vless://link-upntls",
+		},
+	}
+
+	legacyResponse(w, http.StatusOK, 200, "OK", data)
+}
+
+func createTrojanAccount(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		legacyResponse(w, http.StatusMethodNotAllowed, 405, "Method not allowed", nil)
+		return
+	}
+
+	var req LegacyCreateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		legacyResponse(w, http.StatusBadRequest, 400, "Invalid request body", nil)
+		return
+	}
+
+	username := strings.TrimSpace(req.Username)
+	if username == "" || req.Expired <= 0 {
+		legacyResponse(w, http.StatusBadRequest, 400, "username dan expired harus valid", nil)
+		return
+	}
+
+	mutex.Lock()
+	defer mutex.Unlock()
+
+	config, err := loadConfig()
+	if err != nil {
+		legacyResponse(w, http.StatusInternalServerError, 500, "Gagal membaca config", nil)
+		return
+	}
+
+	for _, p := range config.Auth.Config {
+		if p == username {
+			legacyResponse(w, http.StatusConflict, 409, "User sudah ada", nil)
+			return
+		}
+	}
+
+	config.Auth.Config = append(config.Auth.Config, username)
+	if err := saveConfig(config); err != nil {
+		legacyResponse(w, http.StatusInternalServerError, 500, "Gagal menyimpan config", nil)
+		return
+	}
+
+	expiry := time.Now().Add(time.Duration(req.Expired) * 24 * time.Hour)
+	expDate := expiry.Format("2006-01-02")
+	entry := fmt.Sprintf("%s | %s\n", username, expDate)
+
+	f, err := os.OpenFile(UserDB, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		legacyResponse(w, http.StatusInternalServerError, 500, "Gagal membuka database user", nil)
+		return
+	}
+	defer f.Close()
+	if _, err := f.WriteString(entry); err != nil {
+		legacyResponse(w, http.StatusInternalServerError, 500, "Gagal menulis database user", nil)
+		return
+	}
+
+	if err := restartService(); err != nil {
+		legacyResponse(w, http.StatusInternalServerError, 500, "Gagal merestart service", nil)
+		return
+	}
+
+	hostname := getDomainValue()
+	if hostname == "Tidak diatur" {
+		if ip := getPublicIP(); ip != "" {
+			hostname = ip
+		}
+	}
+
+	generateUUID := "550e8400-e29b-41d4-a716-446655440002"
+
+	data := map[string]interface{}{
+		"hostname": hostname,
+		"ISP":      "Unknown",
+		"CITY":     "Unknown",
+		"username": username,
+		"uuid":     generateUUID,
+		"expired":  expDate,
+		"time":     expiry.Format("15:04:05"),
+		"port": map[string]string{
+			"tls":  "443",
+			"none": "80",
+			"any":  "1-65535",
+		},
+		"path": map[string]string{
+			"stn":   "/trojan",
+			"multi": "/trojan-multi",
+			"grpc":  "trojan-grpc",
+			"up":    "/upgrade",
+		},
+		"link": map[string]string{
+			"tls":   "trojan://link-tls",
+			"grpc":  "trojan://link-grpc",
+			"uptls": "trojan://link-uptls",
+		},
+	}
+
+	legacyResponse(w, http.StatusOK, 200, "OK", data)
+}
+
+func createShadowsocksAccount(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodPost {
+		legacyResponse(w, http.StatusMethodNotAllowed, 405, "Method not allowed", nil)
+		return
+	}
+
+	username := r.URL.Query().Get("user")
+	expStr := r.URL.Query().Get("exp")
+	quota := r.URL.Query().Get("quota")
+	iplimit := r.URL.Query().Get("iplimit")
+
+	if username == "" || expStr == "" {
+		legacyResponse(w, http.StatusBadRequest, 400, "user dan exp harus valid", nil)
+		return
+	}
+
+	if quota == "" {
+		quota = "0"
+	}
+	if iplimit == "" {
+		iplimit = "0"
+	}
+
+	exp, err := strconv.Atoi(expStr)
+	if err != nil || exp <= 0 {
+		legacyResponse(w, http.StatusBadRequest, 400, "exp harus berupa bilangan positif", nil)
+		return
+	}
+
+	mutex.Lock()
+	defer mutex.Unlock()
+
+	config, err := loadConfig()
+	if err != nil {
+		legacyResponse(w, http.StatusInternalServerError, 500, "Gagal membaca config", nil)
+		return
+	}
+
+	for _, p := range config.Auth.Config {
+		if p == username {
+			legacyResponse(w, http.StatusConflict, 409, "User sudah ada", nil)
+			return
+		}
+	}
+
+	config.Auth.Config = append(config.Auth.Config, username)
+	if err := saveConfig(config); err != nil {
+		legacyResponse(w, http.StatusInternalServerError, 500, "Gagal menyimpan config", nil)
+		return
+	}
+
+	expiry := time.Now().Add(time.Duration(exp) * 24 * time.Hour)
+	expDate := expiry.Format("2006-01-02")
+	entry := fmt.Sprintf("%s | %s\n", username, expDate)
+
+	f, err := os.OpenFile(UserDB, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		legacyResponse(w, http.StatusInternalServerError, 500, "Gagal membuka database user", nil)
+		return
+	}
+	defer f.Close()
+	if _, err := f.WriteString(entry); err != nil {
+		legacyResponse(w, http.StatusInternalServerError, 500, "Gagal menulis database user", nil)
+		return
+	}
+
+	if err := restartService(); err != nil {
+		legacyResponse(w, http.StatusInternalServerError, 500, "Gagal merestart service", nil)
+		return
+	}
+
+	hostname := getDomainValue()
+	if hostname == "Tidak diatur" {
+		if ip := getPublicIP(); ip != "" {
+			hostname = ip
+		}
+	}
+
+	quotaDisplay := "0 GB"
+	if quota != "0" {
+		quotaDisplay = quota + " GB"
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status": "success",
+		"data": map[string]interface{}{
+			"username":     username,
+			"domain":       hostname,
+			"ns_domain":    "ns-" + hostname,
+			"pubkey":       "-",
+			"expired":      expDate,
+			"quota":        quotaDisplay,
+			"ip_limit":     iplimit,
+			"ss_link_ws":   "ss://link-ws",
+			"ss_link_grpc": "ss://link-grpc",
+		},
+	})
 }
 
 func createUser(w http.ResponseWriter, r *http.Request) {

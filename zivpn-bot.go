@@ -24,7 +24,7 @@ const (
 	ApiUrl        = "http://127.0.0.1:8080/api"
 	ApiKeyFile    = "/etc/zivpn/apikey"
 	// !!! GANTI INI DENGAN URL GAMBAR MENU ANDA !!!
-	MenuPhotoURL = "https://github.com/MyRidwan/MyRidwan/blob/ipuk/20221010_001912.png"
+	MenuPhotoURL = "https://github.com/skynet-vpn/logo/blob/main/logo.png"
 
 	// Interval untuk pengecekan dan penghapusan akun expired
 	AutoDeleteInterval = 30 * time.Second
